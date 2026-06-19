@@ -4,6 +4,7 @@ import {
   AppBar, Toolbar, Typography, Container, Stack,
   Card, CardContent, TextField, Button, Slider,
   Alert, Divider, Box, CircularProgress, Chip,
+  ToggleButton, ToggleButtonGroup,
 } from "@mui/material";
 import WifiIcon from "@mui/icons-material/Wifi";
 import ThermostatIcon from "@mui/icons-material/Thermostat";
@@ -49,6 +50,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [brightness, setBrightness] = useState(85);
+  const [clockStyle, setClockStyle] = useState(0);
   const [timeInput, setTimeInput] = useState({ date: "", time: "" });
   const [timeSaved, setTimeSaved] = useState(false);
   const [cityInput, setCityInput] = useState("");
@@ -69,6 +71,7 @@ export default function App() {
       const data = await res.json();
       setStatus(data);
       setBrightness(data.brightness);
+      setClockStyle(data.clock_style ?? 0);
       setError(null);
     } catch {
       setError("Нет соединения с устройством");
@@ -92,6 +95,11 @@ export default function App() {
 
   const applyBrightness = async (val) => {
     await api(`/api/brightness?value=${val}`, { method: "POST" });
+  };
+
+  const applyClockStyle = async (style) => {
+    setClockStyle(style);
+    await api(`/api/clockstyle?style=${style}`, { method: "POST" });
   };
 
   const applyTime = async (e) => {
@@ -250,6 +258,48 @@ export default function App() {
                 </CardContent>
               </Card>
 
+              {/* Стиль часов */}
+              <Card>
+                <CardContent>
+                  <Typography variant="overline" color="text.secondary">
+                    <AccessTimeIcon sx={{ fontSize: 13, mr: 0.5, verticalAlign: "middle" }} />
+                    Стиль часов
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={clockStyle}
+                    exclusive
+                    onChange={(_, v) => { if (v !== null) applyClockStyle(v); }}
+                    fullWidth
+                    sx={{ mt: 1.5, gap: 1 }}
+                  >
+                    <ToggleButton
+                      value={0}
+                      sx={{
+                        flex: 1,
+                        border: "1px solid #2a2a2a !important",
+                        borderRadius: "10px !important",
+                        color: "#fff",
+                        "&.Mui-selected": { bgcolor: "#1e1e1e", borderColor: "#555 !important" },
+                      }}
+                    >
+                      Экран 1
+                    </ToggleButton>
+                    <ToggleButton
+                      value={1}
+                      sx={{
+                        flex: 1,
+                        border: "1px solid #2a2a2a !important",
+                        borderRadius: "10px !important",
+                        color: "#fff",
+                        "&.Mui-selected": { bgcolor: "#1e1e1e", borderColor: "#555 !important" },
+                      }}
+                    >
+                      Экран 2
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </CardContent>
+              </Card>
+
               {/* Город */}
               <Card>
                 <CardContent>
@@ -334,6 +384,28 @@ export default function App() {
                     onChangeCommitted={(_, v) => applyBrightness(v)}
                     sx={{ mt: 2, color: "#fff" }}
                   />
+                  <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap" }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setBrightness(12);
+                        applyBrightness(12);
+                      }}
+                    >
+                      Night mode
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setBrightness(16);
+                        applyBrightness(16);
+                      }}
+                    >
+                      Day mode
+                    </Button>
+                  </Stack>
                 </CardContent>
               </Card>
 
