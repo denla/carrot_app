@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   createTheme, ThemeProvider, CssBaseline,
   AppBar, Toolbar, Typography, Container, Stack,
@@ -57,6 +57,9 @@ export default function App() {
   const [cityState, setCityState] = useState(null); // null | {ok, city} | {error}
   const [owmKeyInput, setOwmKeyInput] = useState("");
   const [owmKeyState, setOwmKeyState] = useState(null);
+  const [owmKey, setOwmKey] = useState(() => localStorage.getItem("owmKey") || "");
+  const [weatherPush, setWeatherPush] = useState(null); // null | 'loading' | 'ok' | {error}
+  const lastWeatherKey = useRef("");
 
   const api = useCallback(
     (path, options) =>
@@ -87,6 +90,77 @@ export default function App() {
     const t = setInterval(fetchStatus, 10000);
     return () => clearInterval(t);
   }, [fetchStatus]);
+
+  const pushWeather = useCallback(async (lat, lon, key) => {
+    setWeatherPush("loading");
+    try {
+      const [cRes, fRes] = await Promise.all([
+        fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${key}&units=metric&lang=ru`,
+          { signal: AbortSignal.timeout(10000) }
+        ),
+        fetch(
+          `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${key}&units=metric&lang=ru&cnt=40`,
+          { signal: AbortSignal.timeout(10000) }
+        ),
+      ]);
+      if (!cRes.ok) throw new Error(`OWM ${cRes.status}`);
+      const [curr, fore] = await Promise.all([cRes.json(), fRes.json()]);
+
+      const temp = Math.round(curr.main.temp);
+      const desc = curr.weather[0]?.description ?? "";
+      const list = fore.list ?? [];
+      const days = [8, 16, 24]
+        .map((idx) => {
+          const e = list[idx] ?? list[list.length - 1];
+          return e
+            ? {
+                temp: Math.round(e.main.temp),
+                dow: new Date(e.dt * 1000).getDay(),
+                cond: e.weather[0]?.description ?? "",
+              }
+            : null;
+        })
+        .filter(Boolean);
+
+      const params = new URLSearchParams({ temp, desc });
+      days.forEach((d, i) => {
+        params.set(`ftemp${i}`, d.temp);
+        params.set(`fdow${i}`, d.dow);
+        params.set(`fcond${i}`, d.cond);
+      });
+
+      const res = await fetch(`${host}/api/weather?${params}`, {
+        method: "POST",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) throw new Error("Device error");
+
+      setWeatherPush("ok");
+      setTimeout(() => setWeatherPush(null), 3000);
+      fetchStatus();
+    } catch (err) {
+      setWeatherPush({ error: err.message || "Ошибка" });
+    }
+  }, [host, fetchStatus]);
+
+  // Auto-push when coordinates or key change (also fires on first load)
+  useEffect(() => {
+    if (!status?.lat || !status?.lon || !owmKey) return;
+    const combo = `${status.lat}|${status.lon}|${owmKey}`;
+    if (combo === lastWeatherKey.current) return;
+    lastWeatherKey.current = combo;
+    pushWeather(status.lat, status.lon, owmKey);
+  }, [status?.lat, status?.lon, owmKey, pushWeather]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh every 30 minutes
+  useEffect(() => {
+    if (!owmKey) return;
+    const t = setInterval(() => {
+      if (status?.lat && status?.lon) pushWeather(status.lat, status.lon, owmKey);
+    }, 30 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [owmKey, status?.lat, status?.lon, pushWeather]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleConnect = (e) => {
     e.preventDefault();
@@ -126,6 +200,8 @@ export default function App() {
       if (res.ok && data.ok) {
         setOwmKeyState({ ok: true });
         setOwmKeyInput("");
+        setOwmKey(key);
+        localStorage.setItem("owmKey", key);
         setTimeout(fetchStatus, 2000);
       } else {
         setOwmKeyState({ error: data.error || "Ошибка" });
@@ -251,10 +327,37 @@ export default function App() {
                       value={`${status.rssi} dBm`}
                     />
                   </Box>
-                  <Button size="small" sx={{ mt: 1.5, color: "#666" }}
-                    onClick={fetchStatus}>
-                    Обновить
-                  </Button>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.5, alignItems: "center" }}>
+                    <Button size="small" sx={{ color: "#666" }} onClick={fetchStatus}>
+                      Обновить
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={!owmKey || weatherPush === "loading"}
+                      onClick={() => {
+                        lastWeatherKey.current = "";
+                        pushWeather(status.lat, status.lon, owmKey);
+                      }}
+                      sx={{ borderColor: "#333", color: "#888" }}
+                    >
+                      {weatherPush === "loading" ? (
+                        <CircularProgress size={14} sx={{ color: "#888" }} />
+                      ) : (
+                        "Обновить погоду"
+                      )}
+                    </Button>
+                    {weatherPush === "ok" && (
+                      <Typography variant="caption" sx={{ color: "#4ade80" }}>
+                        Обновлено ✓
+                      </Typography>
+                    )}
+                    {weatherPush?.error && (
+                      <Typography variant="caption" sx={{ color: "#f87171" }}>
+                        {weatherPush.error}
+                      </Typography>
+                    )}
+                  </Stack>
                 </CardContent>
               </Card>
 
